@@ -45,6 +45,7 @@ It simulates network attacks, classifies them using a trained neural network, an
 cyber-watch/
 │
 ├── api/
+│   ├──attack_logs.json            # Prediction logs
 │   └── main.py                 # FastAPI backend
 │
 ├── training/
@@ -64,14 +65,13 @@ cyber-watch/
 │   ├── cleaned_data.csv
 │   └── combined.csv
 │
-├── react-dashboard/
+├── frontend/
 │   ├── src/
 │   ├── .env                    # Frontend env (VITE_API_URL)
 │   └── package.json
 │
-├── cyber_attack/               # Virtual environment (ignored)
+├── venv/               # Virtual environment (ignored)
 │
-├── attack_logs.json            # Prediction logs
 ├── requirements.txt
 └── .gitignore
 ```
