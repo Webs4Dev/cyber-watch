@@ -1,0 +1,55 @@
+# =========================
+# 🔐 ENV FILES
+# =========================
+.env
+*.env
+
+# =========================
+# 🐍 PYTHON
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+cyber_attack/
+venv/
+env/
+
+# =========================
+# 📊 DATA FILES (optional)
+# =========================
+# Uncomment if large datasets
+data/*.csv
+
+# =========================
+# 🧾 LOGS
+# =========================
+attack_logs.json
+*.log
+
+# =========================
+# ⚛️ REACT (VITE)
+# =========================
+react-dashboard/node_modules/
+react-dashboard/dist/
+react-dashboard/.vite/
+
+# =========================
+# 🧪 TEST / CACHE
+# =========================
+.cache/
+.pytest_cache/
+
+# =========================
+# 💻 OS FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# 🧠 IDE FILES
+# =========================
+.vscode/
+.idea/
