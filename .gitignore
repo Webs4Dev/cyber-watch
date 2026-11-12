@@ -3,6 +3,7 @@
 # =========================
 .env
 *.env
+!.env.example
 
 # =========================
 # 🐍 PYTHON
@@ -32,15 +33,16 @@ attack_logs.json
 # =========================
 # ⚛️ REACT (VITE)
 # =========================
-react-dashboard/node_modules/
-react-dashboard/dist/
-react-dashboard/.vite/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
 
 # =========================
 # 🧪 TEST / CACHE
 # =========================
 .cache/
 .pytest_cache/
+.playwright-cli/
 
 # =========================
 # 💻 OS FILES

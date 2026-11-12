@@ -1,95 +1,126 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+import json
+import math
+import os
+from datetime import datetime
+from pathlib import Path
+
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-import json
-from datetime import datetime
-from keras.models import load_model
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-app = FastAPI()
+ROOT = Path(__file__).resolve().parent.parent
+MODELS = ROOT / "models"
+LOG_FILE = Path(__file__).resolve().parent / "attack_logs.json"
 
+load_dotenv(ROOT / ".env")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
+
+app = FastAPI(title="CyberWatch API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[o.strip() for o in ALLOWED_ORIGINS],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
-model = load_model("../models/attack_detection_NN_model.keras")
-scaler = joblib.load("../models/scaler.pkl")
-encoder = joblib.load("../models/label_encoder.pkl")
+model = joblib.load(MODELS / "attack_detection_rf.joblib")
+model.set_params(n_jobs=1)  # one row per request: thread start-up would cost more than it saves
+encoder = joblib.load(MODELS / "label_encoder.pkl")
+metrics = json.loads((MODELS / "metrics.json").read_text())
 
-NUM_FEATURES = scaler.mean_.shape[0]
-CONFIDENCE_THRESHOLD = 0.6
+FEATURES = list(model.feature_names_in_)
+CONFIDENCE_THRESHOLD = metrics["confidence_threshold"]
 
-df = pd.read_csv("../data/cleaned_data.csv")
-df.columns = df.columns.str.strip()
+# Held-out test rows the model never trained on (written by training/train_model.py).
+demo = pd.read_parquet(MODELS / "demo_samples.parquet")
+demo_X = demo[FEATURES]
+demo_y = demo["Label"]
 
-X_real = df.drop("Label", axis=1)
-y_real = df["Label"]
+# Severity depends on what the attack is, not on how confident the model is.
+SEVERITY = {
+    "BENIGN": "none",
+    "PortScan": "medium",
+    "DDoS": "high",
+    "DoS Hulk": "high",
+    "DoS GoldenEye": "high",
+    "DoS slowloris": "high",
+    "DoS Slowhttptest": "high",
+    "FTP-Patator": "high",
+    "SSH-Patator": "high",
+    "Bot": "critical",
+    "Infiltration": "critical",
+    "Heartbleed": "critical",
+}
+
 
 class InputData(BaseModel):
     features: list[float]
 
+
 def run_prediction(sample):
-    sample_df = pd.DataFrame([sample], columns=scaler.feature_names_in_)
-    sample_scaled = scaler.transform(sample_df)
-
-    prediction = model.predict(sample_scaled, verbose=0)
-    probs = prediction[0]
-
-    attack_class = int(np.argmax(probs))
+    sample_df = pd.DataFrame([sample], columns=FEATURES)
+    probs = model.predict_proba(sample_df)[0]  # share of trees voting for each class
+    attack_type = str(encoder.inverse_transform([int(np.argmax(probs))])[0])
     confidence = float(np.max(probs))
-    attack_name = encoder.inverse_transform([attack_class])[0]
-
-    if confidence < CONFIDENCE_THRESHOLD:
-        attack_name = "UNKNOWN"
-
-    return attack_name, confidence
-
-def generate_real_sample():
-    idx = np.random.randint(0, len(X_real))
-    sample = X_real.iloc[idx].values
-    label = y_real.iloc[idx]
-    return sample, label
-
-def log_event(simulated, predicted, confidence):
-    log_data = {
-        "time": datetime.now().isoformat(),
-        "simulated": simulated,
-        "predicted": predicted,
-        "confidence": confidence
+    return {
+        "attack_type": attack_type,
+        "confidence": confidence,
+        "low_confidence": confidence < CONFIDENCE_THRESHOLD,
+        "severity": SEVERITY.get(attack_type, "medium"),
     }
 
-    with open("attack_logs.json", "a") as f:
-        f.write(json.dumps(log_data) + "\n")
+
+def random_demo_row():
+    idx = np.random.randint(len(demo_X))
+    return demo_X.iloc[idx].to_numpy(), str(demo_y.iloc[idx])
+
+
+def log_event(simulated, result):
+    entry = {"time": datetime.now().isoformat(), "simulated": simulated, **result}
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/model-info")
+def model_info():
+    return metrics | {"severity": SEVERITY}
+
 
 @app.post("/predict")
 def predict(data: InputData):
+    if len(data.features) != len(FEATURES):
+        raise HTTPException(422, f"Expected {len(FEATURES)} features, got {len(data.features)}")
+    if not all(math.isfinite(v) for v in data.features):
+        raise HTTPException(422, "Features must be finite numbers")
+    return run_prediction(data.features)
 
-    if len(data.features) != NUM_FEATURES:
-        return {"error": f"Expected {NUM_FEATURES} features"}
 
-    attack_name, confidence = run_prediction(data.features)
+@app.get("/sample")
+def sample():
+    """A real held-out row, so the Predict page can be filled with realistic values."""
+    features, label = random_demo_row()
+    return {"label": label, "features": features.tolist()}
 
-    return {
-        "attack_type": attack_name,
-        "confidence": confidence
-    }
 
 @app.get("/simulate")
 def simulate():
-
-    sample, true_label = generate_real_sample()
-
-    predicted, confidence = run_prediction(sample)
-
-    log_event(true_label, predicted, confidence)
-
+    features, true_label = random_demo_row()
+    result = run_prediction(features)
+    log_event(true_label, result)
     return {
         "simulated_attack": true_label,
-        "predicted_attack": predicted,
-        "confidence": confidence
+        "predicted_attack": result["attack_type"],
+        "confidence": result["confidence"],
+        "low_confidence": result["low_confidence"],
+        "severity": result["severity"],
+        "correct": result["attack_type"] == true_label,
     }
