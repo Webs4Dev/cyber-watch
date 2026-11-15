@@ -17,6 +17,8 @@ wrong.
 There is no live packet capture. The "live" stream replays real flows from the test set, which
 the model never saw during training.
 
+**Video walkthrough:** [Watch on YouTube](https://youtu.be/SgGgVcenxjQ)
+
 ![Landing page: the CyberWatch title, headline test metrics (99.89% accuracy, 0.949 macro F1, 9 attack types, 291,041 held-out flows) and an animated diagram of flow features feeding decision trees that vote on a verdict](docs/screenshots/landing.png)
 
 ---
